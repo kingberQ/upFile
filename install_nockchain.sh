@@ -9,6 +9,11 @@ set -e  # 遇到错误自动退出脚本
 
 echo "=== 开始配置 nockchain 挖矿环境 ==="
 
+# 配置 Linux 内核的内存过度提交行为
+echo ">>> 设置 vm.overcommit_memory=1..."
+sudo sysctl -w vm.overcommit_memory=1
+echo ">>> vm.overcommit_memory 设置为 1 完成"
+
 # 1. 安装 Rust（如果未安装）
 if ! command -v rustc &> /dev/null; then
     echo ">>> 正在安装 Rust..."
@@ -85,6 +90,9 @@ else
     echo "[跳过] nockchain 已安装"
 fi
 
+# 确保日志目录存在
+mkdir -p /root/nockchain/logs
+
 # 10. 获取当前服务器的 CPU 线程数
 CPU_THREADS=$(nproc)
 
@@ -104,11 +112,12 @@ echo ">>> 执行挖矿初始化..."
 nockchain --mining-pubkey 37B27sAutZfFNJZcirEZvZwGBR1AKN8ofkzKUFQiywQJHvqkAkUn9L37ewtbohBeo8FEt9X5i4NyHHb6MUNnLjbS83DX9j1k61nrehLm54PjzebAFvMk3Hv8QDu6cN4NQMSi \
   --mine \
   --num-threads $CPU_THREADS \
-  --state-jam /root/nockchain/assets/state.jam
+  --state-jam /root/nockchain/assets/state.jam \
+  >> /root/nockchain/logs/mining.log 2>&1
 
-# 13. 检测是否日志包含 "heard-block: Duplicate block" 来判断初始化完成
+# 监控日志文件直到初始化完成
 echo ">>> 正在监控日志以确认初始化完成..."
-while ! tail -f /root/nockchain/logs/nockchain.log | grep -q "heard-block: Duplicate block"; do
+while ! grep -q "heard-block: Duplicate block" /root/nockchain/logs/mining.log; do
     sleep 5
     echo ">>> 正在等待初始化完成..."
 done
@@ -120,7 +129,7 @@ pm2 start /root/.cargo/bin/nockchain -- \
   --mining-pubkey 37B27sAutZfFNJZcirEZvZwGBR1AKN8ofkzKUFQiywQJHvqkAkUn9L37ewtbohBeo8FEt9X5i4NyHHb6MUNnLjbS83DX9j1k61nrehLm54PjzebAFvMk3Hv8QDu6cN4NQMSi \
   --mine \
   --num-threads $CPU_THREADS \
-  --max_restarts 5 \
+  --max_restarts 50 \
   --restart_delay 60000
 
 # 15. 设置开机启动
